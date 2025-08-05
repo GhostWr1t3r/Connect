@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect, useCallback, Fragment } from "react"
 import {
   Heart,
@@ -21,9 +20,6 @@ import {
   Clock,
   Loader2,
   ArrowUp,
-  Camera,
-  Paperclip,
-  Smile,
   Globe,
   Shield,
   Lock,
@@ -86,7 +82,11 @@ export default function Connect() {
   const [isPostDialogOpen, setIsPostDialogOpen] = useState(false)
   const [isComposeExpanded, setIsComposeExpanded] = useState(false)
   const [quickPostContent, setQuickPostContent] = useState("")
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const quickFileInputRef = useRef<HTMLInputElement>(null)
   const observerRef = useRef<IntersectionObserver | null>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -127,7 +127,6 @@ export default function Connect() {
       setFilteredPosts(posts)
       return
     }
-
     const filtered = posts.filter((post) => post.content.toLowerCase().includes(searchQuery.toLowerCase()))
     setFilteredPosts(filtered)
   }, [searchQuery, posts])
@@ -171,7 +170,6 @@ export default function Connect() {
         if (savedLikedPosts) {
           setLikedPosts(JSON.parse(savedLikedPosts))
         }
-
         const savedLikedComments = localStorage.getItem("likedComments")
         if (savedLikedComments) {
           setLikedComments(JSON.parse(savedLikedComments))
@@ -187,7 +185,6 @@ export default function Connect() {
         setLoading(false)
       }
     }
-
     initialize()
   }, [toast])
 
@@ -278,7 +275,6 @@ export default function Connect() {
     )
 
     observerRef.current = observer
-
     if (loadMoreRef.current) {
       observer.observe(loadMoreRef.current)
     }
@@ -291,7 +287,7 @@ export default function Connect() {
   }, [loading, hasMore, loadingMore, loadMorePosts])
 
   // Handle media file selection
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isQuickCompose = false) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -330,7 +326,18 @@ export default function Connect() {
       setMediaFile(null)
       setMediaType(null)
       setMediaPreview(null)
+      return
     }
+
+    // If this is from quick compose, expand it
+    if (isQuickCompose) {
+      setIsComposeExpanded(true)
+    }
+
+    toast({
+      title: "File selected",
+      description: `${file.name} is ready to upload`,
+    })
   }
 
   // Clear media selection
@@ -340,6 +347,9 @@ export default function Connect() {
     setMediaType(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
+    }
+    if (quickFileInputRef.current) {
+      quickFileInputRef.current.value = ""
     }
   }
 
@@ -355,17 +365,19 @@ export default function Connect() {
     }
 
     try {
-      setLoading(true)
-
+      setIsUploading(true)
+      setUploadProgress(0)
       let mediaUrl = null
       let mediaTypeToSave = null
 
       // Upload media if present
       if (mediaFile) {
         try {
+          setUploadProgress(25)
           const uploadResult = await uploadMedia(mediaFile)
           mediaUrl = uploadResult.url
           mediaTypeToSave = uploadResult.type
+          setUploadProgress(75)
         } catch (uploadError: any) {
           console.error("Media upload error:", uploadError)
           toast({
@@ -379,6 +391,7 @@ export default function Connect() {
 
       // Only create post if we have content or media was successfully uploaded
       if (content.trim() || mediaUrl) {
+        setUploadProgress(90)
         // Create post
         const newPost = await createPost(content, mediaUrl, mediaTypeToSave as any)
 
@@ -392,6 +405,7 @@ export default function Connect() {
         setQuickPostContent("")
         clearMedia()
         setIsComposeExpanded(false)
+        setUploadProgress(100)
 
         toast({
           title: "Success",
@@ -412,14 +426,22 @@ export default function Connect() {
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      setIsUploading(false)
+      setUploadProgress(0)
       setIsPostDialogOpen(false)
     }
   }
 
   // Handle quick post submission
   const handleQuickPost = async () => {
-    if (!quickPostContent.trim()) return
+    if (!quickPostContent.trim() && !mediaFile) {
+      toast({
+        title: "Empty post",
+        description: "Please add some content or media to your post",
+        variant: "destructive",
+      })
+      return
+    }
     await handleSubmitPost(quickPostContent)
   }
 
@@ -441,7 +463,6 @@ export default function Connect() {
       setLikedPosts({ ...likedPosts, [postId]: true })
 
       await likePost(postId, currentLikes)
-
       toast({
         title: "Liked!",
         description: "You liked this post",
@@ -451,7 +472,6 @@ export default function Connect() {
       setPosts(posts.map((post) => (post.id === postId ? { ...post, likes: currentLikes } : post)))
       setFilteredPosts(filteredPosts.map((post) => (post.id === postId ? { ...post, likes: currentLikes } : post)))
       setLikedPosts({ ...likedPosts, [postId]: false })
-
       toast({
         title: "Error",
         description: error.message || "Failed to like post",
@@ -484,12 +504,10 @@ export default function Connect() {
   // Toggle comments section
   const toggleComments = async (postId: string) => {
     const isOpen = openComments[postId]
-
     // If opening comments and we don't have them yet, fetch them
     if (!isOpen && !comments[postId]) {
       await fetchComments(postId)
     }
-
     setOpenComments({ ...openComments, [postId]: !isOpen })
   }
 
@@ -561,7 +579,6 @@ export default function Connect() {
       setLikedComments({ ...likedComments, [commentId]: true })
 
       await likeComment(commentId, currentLikes)
-
       toast({
         title: "Liked!",
         description: "You liked this comment",
@@ -575,7 +592,6 @@ export default function Connect() {
         ),
       })
       setLikedComments({ ...likedComments, [commentId]: false })
-
       toast({
         title: "Error",
         description: error.message || "Failed to like comment",
@@ -587,7 +603,6 @@ export default function Connect() {
   // Set up reply to comment
   const handleReplyToComment = (postId: string, commentId: string) => {
     setReplyingTo({ ...replyingTo, [postId]: commentId })
-
     // Focus the comment input
     setTimeout(() => {
       const commentInput = document.getElementById(`comment-input-${postId}`)
@@ -681,16 +696,15 @@ export default function Connect() {
     if (!mediaPreview && !mediaType) return null
 
     return (
-      <div className="relative mt-3 rounded-xl overflow-hidden border border-zinc-800/50">
+      <div className="relative mt-3 rounded-xl overflow-hidden border border-zinc-800/50 bg-zinc-900/30">
         <Button
           variant="ghost"
           size="icon"
-          className="absolute top-2 right-2 bg-black/80 rounded-full z-10 hover:bg-black/60"
+          className="absolute top-2 right-2 bg-black/80 rounded-full z-10 hover:bg-black/60 h-8 w-8"
           onClick={clearMedia}
         >
           <X className="h-4 w-4" />
         </Button>
-
         {mediaType === "image" && mediaPreview && (
           <img
             src={mediaPreview || "/placeholder.svg"}
@@ -698,15 +712,18 @@ export default function Connect() {
             className="w-full h-auto max-h-[300px] object-contain"
           />
         )}
-
         {mediaType === "video" && mediaPreview && (
           <video src={mediaPreview} controls className="w-full max-h-[300px]" />
         )}
-
         {mediaType === "audio" && mediaFile && (
           <div className="p-4 flex items-center gap-3">
-            <Mic className="h-6 w-6 text-zinc-400" />
-            <span className="text-sm text-zinc-400">{mediaFile.name}</span>
+            <div className="p-2 rounded-full bg-zinc-800/50">
+              <Mic className="h-6 w-6 text-zinc-400" />
+            </div>
+            <div>
+              <span className="text-sm text-zinc-300 font-medium">{mediaFile.name}</span>
+              <p className="text-xs text-zinc-500">Audio file ready to upload</p>
+            </div>
           </div>
         )}
       </div>
@@ -728,14 +745,12 @@ export default function Connect() {
           <Skeleton className="h-8 w-8 rounded-full bg-zinc-800/50" />
         </div>
       </div>
-
       <div className="p-4">
         <Skeleton className="h-4 w-full mb-2 bg-zinc-800/50" />
         <Skeleton className="h-4 w-3/4 mb-2 bg-zinc-800/50" />
         <Skeleton className="h-4 w-1/2 bg-zinc-800/50" />
         <Skeleton className="h-48 w-full mt-3 rounded-xl bg-zinc-800/50" />
       </div>
-
       <div className="p-4 pt-0">
         <div className="flex items-center gap-4">
           <Skeleton className="h-8 w-16 rounded-md bg-zinc-800/50" />
@@ -768,7 +783,6 @@ export default function Connect() {
     }
 
     const postComments = comments[postId] || []
-
     if (postComments.length === 0) {
       return (
         <div className="py-6 text-center text-zinc-500">
@@ -796,7 +810,6 @@ export default function Connect() {
     // Recursive function to render comment thread
     const renderCommentThread = (comment: Comment, depth = 0) => {
       const replies = commentsByParent[comment.id] || []
-
       return (
         <div
           key={comment.id}
@@ -837,7 +850,6 @@ export default function Connect() {
               </div>
             </div>
           </div>
-
           {replies.map((reply) => renderCommentThread(reply, depth + 1))}
         </div>
       )
@@ -878,7 +890,6 @@ export default function Connect() {
                 <DialogHeader>
                   <DialogTitle className="text-xl font-bold">Create a new post</DialogTitle>
                 </DialogHeader>
-
                 <div className="mt-4">
                   <Textarea
                     placeholder="What's on your mind?"
@@ -886,18 +897,15 @@ export default function Connect() {
                     value={postContent}
                     onChange={(e) => setPostContent(e.target.value)}
                   />
-
                   {renderMediaPreview()}
-
                   <div className="flex items-center gap-2 mt-4">
                     <Input
                       type="file"
                       ref={fileInputRef}
                       className="hidden"
-                      onChange={handleFileChange}
+                      onChange={(e) => handleFileChange(e)}
                       accept="image/*,video/*,audio/*"
                     />
-
                     <Tabs defaultValue="image" className="w-full">
                       <TabsList className="grid grid-cols-3 bg-zinc-800/50 p-1 rounded-xl">
                         <TabsTrigger
@@ -928,7 +936,6 @@ export default function Connect() {
                     </Tabs>
                   </div>
                 </div>
-
                 <DialogFooter className="mt-4">
                   <div className="flex items-center text-xs text-zinc-500 mr-auto">
                     <Shield className="h-3 w-3 mr-1" />
@@ -944,13 +951,13 @@ export default function Connect() {
                   </DialogClose>
                   <Button
                     onClick={() => handleSubmitPost()}
-                    disabled={loading || (!postContent.trim() && !mediaFile)}
+                    disabled={isUploading || (!postContent.trim() && !mediaFile)}
                     className="bg-gradient-to-r from-zinc-700 to-zinc-900 hover:from-zinc-600 hover:to-zinc-800 text-white border border-zinc-700/50 rounded-xl"
                   >
-                    {loading ? (
+                    {isUploading ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Posting...
+                        {uploadProgress > 0 ? `${uploadProgress}%` : "Uploading..."}
                       </>
                     ) : (
                       <>
@@ -998,7 +1005,6 @@ export default function Connect() {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-
             {searchQuery.trim() && (
               <div className="max-w-2xl mx-auto w-full mt-4 overflow-auto flex-1">
                 {filteredPosts.length === 0 ? (
@@ -1010,7 +1016,7 @@ export default function Connect() {
                     {filteredPosts.map((post) => (
                       <div
                         key={post.id}
-                        className="bg-zinc-900/60 backdrop-blur-sm rounded-xl p-4 border border-zinc-800/50 cursor-pointer"
+                        className="bg-zinc-900/60 backdrop-blur-sm rounded-xl p-4 border border-zinc-800/50 cursor-pointer hover:border-zinc-700/50 transition-colors"
                         onClick={() => {
                           setIsSearchFocused(false)
                           setTimeout(() => {
@@ -1041,7 +1047,7 @@ export default function Connect() {
         <div className="mt-6 mb-6">
           <div
             className={cn(
-              "bg-zinc-900/60 backdrop-blur-sm rounded-xl border border-zinc-800/50 transition-all duration-300 shadow-lg",
+              "bg-zinc-900/60 backdrop-blur-sm rounded-xl border border-zinc-800/50 transition-all duration-300 shadow-lg hover:border-zinc-700/50",
               isComposeExpanded ? "p-4" : "p-3",
             )}
           >
@@ -1053,36 +1059,48 @@ export default function Connect() {
                   </Avatar>
                   <Textarea
                     placeholder="What's on your mind?"
-                    className="flex-1 resize-none bg-transparent border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 p-0 text-sm min-h-[80px]"
+                    className="flex-1 resize-none bg-transparent border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 p-0 text-sm min-h-[80px] placeholder:text-zinc-500"
                     value={quickPostContent}
                     onChange={(e) => setQuickPostContent(e.target.value)}
                     autoFocus
                   />
                 </div>
+                {renderMediaPreview()}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      ref={quickFileInputRef}
+                      className="hidden"
+                      onChange={(e) => handleFileChange(e, true)}
+                      accept="image/*,video/*,audio/*"
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 rounded-full bg-zinc-800/50 hover:bg-zinc-700/50"
-                      onClick={() => fileInputRef.current?.click()}
+                      className="h-8 w-8 rounded-full bg-zinc-800/50 hover:bg-zinc-700/50 transition-colors"
+                      onClick={() => quickFileInputRef.current?.click()}
+                      title="Upload image"
                     >
-                      <Camera className="h-4 w-4" />
+                      <ImageIcon className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 rounded-full bg-zinc-800/50 hover:bg-zinc-700/50"
-                      onClick={() => fileInputRef.current?.click()}
+                      className="h-8 w-8 rounded-full bg-zinc-800/50 hover:bg-zinc-700/50 transition-colors"
+                      onClick={() => quickFileInputRef.current?.click()}
+                      title="Upload video"
                     >
-                      <Paperclip className="h-4 w-4" />
+                      <Video className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 rounded-full bg-zinc-800/50 hover:bg-zinc-700/50"
+                      className="h-8 w-8 rounded-full bg-zinc-800/50 hover:bg-zinc-700/50 transition-colors"
+                      onClick={() => quickFileInputRef.current?.click()}
+                      title="Upload audio"
                     >
-                      <Smile className="h-4 w-4" />
+                      <Mic className="h-4 w-4" />
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1092,6 +1110,7 @@ export default function Connect() {
                       className="text-zinc-400 hover:text-zinc-300 hover:bg-transparent"
                       onClick={() => {
                         setQuickPostContent("")
+                        clearMedia()
                         setIsComposeExpanded(false)
                       }}
                     >
@@ -1100,20 +1119,44 @@ export default function Connect() {
                     <Button
                       size="sm"
                       className="rounded-full bg-gradient-to-r from-zinc-700 to-zinc-900 hover:from-zinc-600 hover:to-zinc-800 border border-zinc-700/50"
-                      disabled={!quickPostContent.trim()}
+                      disabled={!quickPostContent.trim() && !mediaFile}
                       onClick={handleQuickPost}
                     >
-                      Post
+                      {isUploading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          {uploadProgress > 0 ? `${uploadProgress}%` : "Posting..."}
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4 mr-2" />
+                          Post
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 cursor-text" onClick={() => setIsComposeExpanded(true)}>
+              <div
+                className="flex items-center gap-2 cursor-text hover:bg-zinc-800/30 rounded-lg p-2 -m-2 transition-colors"
+                onClick={() => setIsComposeExpanded(true)}
+              >
                 <Avatar className="h-8 w-8 border-none bg-zinc-800/80">
                   <AvatarFallback className="bg-zinc-800/80 text-zinc-300">A</AvatarFallback>
                 </Avatar>
                 <span className="text-zinc-500 text-sm">What's on your mind?</span>
+                <div className="ml-auto flex items-center gap-1">
+                  <div className="p-1 rounded bg-zinc-800/50">
+                    <ImageIcon className="h-3 w-3 text-zinc-600" />
+                  </div>
+                  <div className="p-1 rounded bg-zinc-800/50">
+                    <Video className="h-3 w-3 text-zinc-600" />
+                  </div>
+                  <div className="p-1 rounded bg-zinc-800/50">
+                    <Mic className="h-3 w-3 text-zinc-600" />
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1206,7 +1249,7 @@ export default function Connect() {
                       variant="ghost"
                       size="sm"
                       className={cn(
-                        "flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3",
+                        "flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3 transition-colors",
                         likedPosts[post.id] && "text-zinc-300",
                       )}
                       onClick={() => handleLikePost(post.id, post.likes)}
@@ -1214,37 +1257,33 @@ export default function Connect() {
                     >
                       <Heart
                         className={cn(
-                          "h-4 w-4",
-                          likedPosts[post.id] && "fill-zinc-300 text-zinc-300",
-                          likedPosts[post.id] && "animate-pulse",
+                          "h-4 w-4 transition-all",
+                          likedPosts[post.id] && "fill-zinc-300 text-zinc-300 scale-110",
                         )}
                       />
                       <span>{post.likes > 0 ? post.likes : ""}</span>
                     </Button>
-
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3"
+                      className="flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3 transition-colors"
                       onClick={() => toggleComments(post.id)}
                     >
                       <MessageSquare className="h-4 w-4" />
                       <span>{commentCounts[post.id] || 0}</span>
                     </Button>
-
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3"
+                      className="flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3 transition-colors"
                       onClick={() => sharePost(post.id)}
                     >
                       <Share2 className="h-4 w-4" />
                     </Button>
-
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3 ml-auto"
+                      className="flex items-center gap-1 text-zinc-500 hover:text-zinc-300 hover:bg-transparent rounded-full px-3 ml-auto transition-colors"
                     >
                       <Eye className="h-4 w-4" />
                       <span>View</span>
@@ -1254,9 +1293,7 @@ export default function Connect() {
                   {openComments[post.id] && (
                     <div className="w-full mt-4 overflow-hidden">
                       <Separator className="mb-4 bg-zinc-800/50" />
-
                       {renderComments(post.id)}
-
                       <div className="mt-4">
                         {replyingTo[post.id] && (
                           <div className="mb-2 flex items-center justify-between bg-zinc-800/30 backdrop-blur-sm rounded-xl p-2 text-xs border border-zinc-800/30">
@@ -1271,7 +1308,6 @@ export default function Connect() {
                             </Button>
                           </div>
                         )}
-
                         <div className="flex items-center gap-2">
                           <Avatar className="h-6 w-6 border-none bg-zinc-800/80">
                             <AvatarFallback className="text-xs bg-zinc-800/80 text-zinc-300">A</AvatarFallback>
