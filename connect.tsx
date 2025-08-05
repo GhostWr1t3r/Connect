@@ -973,7 +973,7 @@ export default function Connect() {
         </header>
 
         <div className="mt-6 text-center">
-          <p className="text-zinc-400 text-xl mb-2">Morocco’s next-gen anonymous social hub</p>
+          <p className="text-xl mb-2 bg-gradient-to-r from-red-500 to-green-500 text-transparent bg-clip-text">Morocco’s next-gen anonymous social hub</p>
           <p className="text-zinc-400 mb-2">Share your thoughts and experiences anonymously — no sign-up needed!</p>
 
           <div className="flex items-center justify-center gap-2 text-xs text-zinc-600">
